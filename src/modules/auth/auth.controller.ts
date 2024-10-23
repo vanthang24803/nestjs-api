@@ -38,7 +38,6 @@ export class AuthController {
     @CurrentUser() user: UserSchema,
     @Res({ passthrough: true }) response: Response,
   ): Promise<BaseResponse<TokenResponse>> {
-    console.log(user);
     return new BaseResponse(200, await this.authService.login(user, response));
   }
 

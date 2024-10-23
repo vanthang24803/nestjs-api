@@ -1,0 +1,1 @@
+ALTER TABLE "tokens" ALTER COLUMN "value" SET NOT NULL;
