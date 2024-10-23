@@ -1,8 +1,8 @@
-import { randomUUID } from "crypto";
+import { type InferSelectModel } from "drizzle-orm";
 import { pgTable, uuid, varchar, text, timestamp } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
-  id: uuid().primaryKey().default(randomUUID()).notNull(),
+  id: uuid().defaultRandom().notNull(),
   email: varchar("email", { length: 255 }).unique().notNull(),
   firstName: varchar("first_name", { length: 255 }).notNull(),
   lastName: varchar("last_name", { length: 255 }).notNull(),
@@ -15,3 +15,5 @@ export const users = pgTable("users", {
     .notNull()
     .$onUpdateFn(() => new Date()),
 });
+
+export type UserSchema = InferSelectModel<typeof users>;

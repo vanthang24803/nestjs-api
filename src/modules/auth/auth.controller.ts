@@ -1,9 +1,21 @@
-import { Body, Controller, HttpCode, Post } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Post,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiResponse, ApiTags } from "@nestjs/swagger";
-import { BaseAPIDocs } from "@/common/decorators";
+import { BaseAPIDocs, CurrentUser } from "@/common/decorators";
 import BaseResponse from "@/shared/helpers/response.helper";
 import { AuthService } from "./auth.service";
-import { LoginRequest, RegisterRequest } from "./dto";
+import { RegisterRequest } from "./dto";
+import { Response } from "express";
+
+import { TokenResponse } from "@/shared/interfaces/auth.interface";
+import { LocalAuthGuard } from "@/common/guards/local-auth.guard";
+import { UserSchema } from "@/domain/schema";
 
 @Controller({
   path: "auth",
@@ -21,8 +33,13 @@ export class AuthController {
     description:
       "Login successful. Returns user information and an authentication token.",
   })
-  login(@Body() loginRequest: LoginRequest) {
-    return new BaseResponse(200, this.authService.login(loginRequest));
+  @UseGuards(LocalAuthGuard)
+  async login(
+    @CurrentUser() user: UserSchema,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<BaseResponse<TokenResponse>> {
+    console.log(user);
+    return new BaseResponse(200, await this.authService.login(user, response));
   }
 
   @Post("register")
@@ -31,7 +48,9 @@ export class AuthController {
     status: 201,
     description: "Register successfully. Returns string message.",
   })
-  async register(@Body() registerRequest: RegisterRequest) {
+  async register(
+    @Body() registerRequest: RegisterRequest,
+  ): Promise<BaseResponse<object>> {
     return new BaseResponse(
       201,
       await this.authService.register(registerRequest),
