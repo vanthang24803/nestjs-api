@@ -1,7 +1,7 @@
 import { relations, type InferSelectModel } from "drizzle-orm";
 import { pgTable, uuid, varchar, text, timestamp } from "drizzle-orm/pg-core";
 import { tokens, TokenSchema } from "./token.schema";
-import { userRoles, UserRoleSchema } from "./user-role.schema";
+import { members } from "./member.schema";
 
 export const users = pgTable("users", {
   id: uuid().defaultRandom().notNull().primaryKey(),
@@ -20,10 +20,9 @@ export const users = pgTable("users", {
 
 export const userRelations = relations(users, ({ many }) => ({
   tokens: many(tokens),
-  roles: many(userRoles),
+  members: many(members),
 }));
 
 export type UserSchema = InferSelectModel<typeof users> & {
-  roles: UserRoleSchema[];
   tokens: TokenSchema[];
 };

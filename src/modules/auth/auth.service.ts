@@ -2,33 +2,42 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  NotFoundException,
+  Logger,
   UnauthorizedException,
 } from "@nestjs/common";
 import * as bcrypt from "bcrypt";
 import { Schema } from "@/shared/interfaces";
-import { tokens, userRoles, users, UserSchema } from "@/domain/schema";
+import { tokens, users, type UserSchema } from "@/domain/schema";
 import { initAvatar } from "@/shared/helpers/avatar.helper";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
-import { Payload, TokenResponse } from "@/shared/interfaces/auth.interface";
+import {
+  JwtPayload,
+  Payload,
+  TokenResponse,
+} from "@/shared/interfaces/auth.interface";
 
 import { RegisterRequest, RefreshToken } from "./dto";
 import { Response } from "express";
 import { addDays } from "date-fns";
+import { and, eq } from "drizzle-orm";
+import { DateHelper } from "@/shared/helpers/date.helper";
 @Injectable()
 export class AuthService {
-  private jwtSecret: string;
-  private jwtRefresh: string;
+  private secretKey: string;
+  private refreshKey: string;
   private nodeEnv: string;
+  private readonly SECRET_COOKIES = "Secret";
+  private readonly REFRESH_COOKIES = "Refresh";
 
   constructor(
     @Inject("DATABASE_CONNECTION") private readonly database: Schema,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly logger: Logger,
   ) {
-    this.jwtSecret = this.configService.get<string>("JWT_SECRET");
-    this.jwtRefresh = this.configService.get<string>("JWT_REFRESH");
+    this.secretKey = this.configService.get<string>("JWT_SECRET");
+    this.refreshKey = this.configService.get<string>("JWT_REFRESH");
     this.nodeEnv = this.configService.get("NODE_ENV");
   }
 
@@ -46,26 +55,34 @@ export class AuthService {
         userId: user.id,
         value: token.refreshToken,
       });
+
+      this.setCookies(token.accessToken, token.refreshToken, response);
+      return token;
+    } else {
+      const payload = this.decodeSingleToken(
+        existingRefreshToken.value,
+        this.refreshKey,
+      );
+
+      if (payload.exp < DateHelper.currentTime()) {
+        await this.database.update(tokens).set({
+          value: token.refreshToken,
+        });
+
+        this.setCookies(token.accessToken, token.refreshToken, response);
+        return token;
+      } else {
+        this.setCookies(
+          token.accessToken,
+          existingRefreshToken.value,
+          response,
+        );
+        return {
+          accessToken: token.accessToken,
+          refreshToken: existingRefreshToken.value,
+        };
+      }
     }
-
-    existingRefreshToken.value = token.refreshToken;
-
-    await this.database.update(tokens).set({
-      value: token.refreshToken,
-    });
-
-    response.cookie("Secret", token.accessToken, {
-      httpOnly: true,
-      secure: this.nodeEnv === "production",
-      expires: addDays(new Date(), 7),
-    });
-    response.cookie("Refresh", token.refreshToken, {
-      httpOnly: true,
-      secure: this.nodeEnv === "production",
-      expires: addDays(new Date(), 7),
-    });
-
-    return token;
   }
 
   async register(registerRequest: RegisterRequest): Promise<object> {
@@ -75,13 +92,7 @@ export class AuthService {
 
     if (isExistingEmail) throw new BadRequestException("Email existed");
 
-    const customerRole = await this.database.query.roles.findFirst({
-      where: (roles, { eq }) => eq(roles.name, "CUSTOMER"),
-    });
-
-    if (!customerRole) throw new NotFoundException("Customer role not found!");
-
-    const [newAccount] = await this.database
+    await this.database
       .insert(users)
       .values({
         ...registerRequest,
@@ -92,11 +103,6 @@ export class AuthService {
       })
       .returning();
 
-    await this.database.insert(userRoles).values({
-      roleId: customerRole.id,
-      userId: newAccount.id,
-    });
-
     return {
       message: "Register successfully!",
     };
@@ -106,14 +112,11 @@ export class AuthService {
     const existingAccount = await this.database.query.users.findFirst({
       where: (users, { eq }) => eq(users.id, id),
       with: {
-        roles: true,
         tokens: true,
       },
     });
 
     if (!existingAccount) throw new UnauthorizedException();
-
-    console.log(existingAccount);
 
     return existingAccount;
   }
@@ -122,7 +125,6 @@ export class AuthService {
     const existingAccount = await this.database.query.users.findFirst({
       where: (users, { eq }) => eq(users.email, email),
       with: {
-        roles: true,
         tokens: true,
       },
     });
@@ -140,8 +142,89 @@ export class AuthService {
     return existingAccount;
   }
 
-  async refreshToken(refreshTokenRequest: RefreshToken) {
-    return refreshTokenRequest;
+  async refreshToken(
+    refreshTokenRequest: RefreshToken,
+  ): Promise<TokenResponse> {
+    const payload = this.decodeSingleToken(
+      refreshTokenRequest.token,
+      this.refreshKey,
+    );
+
+    const existingAccount = await this.database.query.users.findFirst({
+      where: (users, { eq }) => eq(users.id, payload.id),
+      with: {
+        tokens: true,
+      },
+    });
+
+    if (!existingAccount) throw new UnauthorizedException();
+
+    const token = await this.database
+      .select({
+        id: tokens.id,
+        value: tokens.value,
+      })
+      .from(tokens)
+      .where(
+        and(eq(tokens.type, "REFRESH_TOKEN"), eq(tokens.userId, payload.id)),
+      );
+
+    if (!token || token.length === 0) throw new UnauthorizedException();
+
+    const newToken = this.generateToken(existingAccount);
+
+    if (payload.exp > DateHelper.currentTime()) {
+      return {
+        accessToken: newToken.accessToken,
+        refreshToken: token[0].value,
+      };
+    } else {
+      await this.database.update(tokens).set({
+        value: newToken.refreshToken,
+      });
+
+      return newToken;
+    }
+  }
+
+  async logout(user: UserSchema, response: Response) {
+    const existingToken = await this.database
+      .select({
+        id: tokens.id,
+      })
+      .from(tokens)
+      .where(and(eq(tokens.userId, user.id), eq(tokens.type, "REFRESH_TOKEN")))
+      .limit(1);
+
+    if (existingToken.length > 0) {
+      await this.database
+        .delete(tokens)
+        .where(eq(tokens.id, existingToken[0].id));
+    }
+
+    response.clearCookie(this.REFRESH_COOKIES);
+    response.clearCookie(this.SECRET_COOKIES);
+
+    return {
+      message: "Logout successfully!",
+    };
+  }
+
+  private setCookies(
+    accessToken: string,
+    refreshToken: string,
+    response: Response,
+  ) {
+    response.cookie(this.SECRET_COOKIES, accessToken, {
+      httpOnly: true,
+      secure: this.nodeEnv === "production",
+      expires: addDays(new Date(), 7),
+    });
+    response.cookie(this.REFRESH_COOKIES, refreshToken, {
+      httpOnly: true,
+      secure: this.nodeEnv === "production",
+      expires: addDays(new Date(), 7),
+    });
   }
 
   private generateToken(user: UserSchema): TokenResponse {
@@ -149,12 +232,11 @@ export class AuthService {
       id: user.id,
       fullName: `${user.firstName} ${user.lastName}`,
       avatar: user.avatar,
-      roles: ["Admin", "Manager", "User"],
     };
 
     return {
-      accessToken: this.generateSingleToken(payload, this.jwtSecret, "7d"),
-      refreshToken: this.generateSingleToken(payload, this.jwtRefresh, "30d"),
+      accessToken: this.generateSingleToken(payload, this.secretKey, "7d"),
+      refreshToken: this.generateSingleToken(payload, this.refreshKey, "30d"),
     };
   }
 
@@ -169,7 +251,7 @@ export class AuthService {
     });
   }
 
-  private decodeSingleToken(token: string, key: string): Payload {
+  private decodeSingleToken(token: string, key: string): JwtPayload {
     return this.jwtService.verify(token, {
       secret: key,
     });

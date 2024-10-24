@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1729675647319,
-      "tag": "0000_chilly_celestials",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1729677689482,
-      "tag": "0001_supreme_professor_monster",
+      "when": 1729754567126,
+      "tag": "0000_giant_pepper_potts",
       "breakpoints": true
     }
   ]
