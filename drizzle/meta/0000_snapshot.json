@@ -1,5 +1,5 @@
 {
-  "id": "99693ab6-e672-4ffb-959c-fb3c186321a5",
+  "id": "b55b9692-ab89-4032-8d66-16608cabc78f",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -87,10 +87,11 @@
         },
         "name": {
           "name": "name",
-          "type": "text",
+          "type": "role_base",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": false,
-          "default": "'MANAGER'"
+          "default": "'CUSTOMER'"
         },
         "created_at": {
           "name": "created_at",
@@ -135,7 +136,7 @@
           "name": "value",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "user_id": {
           "name": "user_id",
@@ -238,8 +239,8 @@
     }
   },
   "enums": {
-    "public.role": {
-      "name": "role",
+    "public.role_base": {
+      "name": "role_base",
       "schema": "public",
       "values": [
         "CUSTOMER",

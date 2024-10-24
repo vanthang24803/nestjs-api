@@ -1,12 +1,12 @@
-import { pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { pgEnum, pgTable, timestamp, uuid } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel } from "drizzle-orm";
 import { userRoles } from "./user-role.schema";
 
-export const roleEnum = pgEnum("role", ["CUSTOMER", "MANAGER", "ADMIN"]);
+export const roleEnum = pgEnum("role_base", ["CUSTOMER", "MANAGER", "ADMIN"]);
 
 export const roles = pgTable("roles", {
   id: uuid().defaultRandom().notNull().primaryKey(),
-  name: text("name").default("MANAGER"),
+  name: roleEnum("name").notNull(),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updateAt: timestamp("updated_at")

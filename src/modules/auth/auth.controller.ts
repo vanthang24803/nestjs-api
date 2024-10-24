@@ -16,6 +16,7 @@ import { Response } from "express";
 import { TokenResponse } from "@/shared/interfaces/auth.interface";
 import { LocalAuthGuard } from "@/common/guards/local-auth.guard";
 import { UserSchema } from "@/domain/schema";
+import { JwtAuthGuard } from "@/common/guards/jwt-auth.guard";
 
 @Controller({
   path: "auth",
@@ -54,5 +55,19 @@ export class AuthController {
       201,
       await this.authService.register(registerRequest),
     );
+  }
+
+  @Post("logout")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  @ApiResponse({
+    status: 200,
+    description: "Logout successfully. Returns string message.",
+  })
+  async logout(
+    @CurrentUser() user: UserSchema,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return new BaseResponse(200, await this.authService.logout(user, response));
   }
 }

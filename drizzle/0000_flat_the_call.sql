@@ -1,4 +1,4 @@
-CREATE TYPE "public"."role" AS ENUM('CUSTOMER', 'MANAGER', 'ADMIN');--> statement-breakpoint
+CREATE TYPE "public"."role_base" AS ENUM('CUSTOMER', 'MANAGER', 'ADMIN');--> statement-breakpoint
 CREATE TYPE "public"."type" AS ENUM('REFRESH_TOKEN', 'FORGOT_PASSWORD_TOKEN', 'VERIFY_ACCOUNT_TOKEN');--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "users" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS "users" (
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "roles" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"name" text DEFAULT 'MANAGER',
+	"name" "role_base" DEFAULT 'CUSTOMER',
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS "roles" (
 CREATE TABLE IF NOT EXISTS "tokens" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"type" "type" NOT NULL,
-	"value" text,
+	"value" text NOT NULL,
 	"user_id" uuid NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
