@@ -7,7 +7,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiResponse, ApiTags } from "@nestjs/swagger";
-import { BaseAPIDocs, CurrentUser, Roles } from "@/common/decorators";
+import { BaseAPIDocs, CurrentUser } from "@/common/decorators";
 import BaseResponse from "@/shared/helpers/response.helper";
 import { AuthService } from "./auth.service";
 import { RefreshToken, RegisterRequest } from "./dto";
@@ -17,8 +17,6 @@ import { TokenResponse } from "@/shared/interfaces/auth.interface";
 import { LocalAuthGuard } from "@/common/guards/local-auth.guard";
 import { UserSchema } from "@/domain/schema";
 import { JwtAuthGuard } from "@/common/guards/jwt-auth.guard";
-import { Role } from "@/domain/enums";
-import { RolesGuard } from "@/common/guards/roles.guard";
 
 @Controller({
   path: "auth",
@@ -71,8 +69,7 @@ export class AuthController {
 
   @Post("logout")
   @HttpCode(200)
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.CUSTOMER)
+  @UseGuards(JwtAuthGuard)
   @ApiResponse({
     status: 200,
     description: "Logout successfully. Returns string message.",

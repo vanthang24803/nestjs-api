@@ -3,12 +3,11 @@ import {
   Inject,
   Injectable,
   Logger,
-  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import * as bcrypt from "bcrypt";
 import { Schema } from "@/shared/interfaces";
-import { roles, tokens, userRoles, users, UserSchema } from "@/domain/schema";
+import { tokens, users, type UserSchema } from "@/domain/schema";
 import { initAvatar } from "@/shared/helpers/avatar.helper";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
@@ -21,7 +20,7 @@ import {
 import { RegisterRequest, RefreshToken } from "./dto";
 import { Response } from "express";
 import { addDays } from "date-fns";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { DateHelper } from "@/shared/helpers/date.helper";
 @Injectable()
 export class AuthService {
@@ -42,27 +41,8 @@ export class AuthService {
     this.nodeEnv = this.configService.get("NODE_ENV");
   }
 
-  async findRoles(roleIds: string[]) {
-    const existingRoles = await this.database
-      .select({ name: roles.name })
-      .from(roles)
-      .where(inArray(roles.id, roleIds));
-
-    const userRoles: string[] = existingRoles.map((role) => role.name);
-
-    if (userRoles.length === 0) {
-      throw new NotFoundException("No valid roles found!");
-    }
-
-    return userRoles;
-  }
-
   async login(user: UserSchema, response: Response): Promise<TokenResponse> {
-    const roleIds = user.roles.map((role) => role.roleId);
-
-    const userRoles: string[] = await this.findRoles(roleIds);
-
-    const token: TokenResponse = this.generateToken(user, userRoles);
+    const token: TokenResponse = this.generateToken(user);
 
     const existingRefreshToken = await this.database.query.tokens.findFirst({
       where: (tokens, { and, eq }) =>
@@ -112,13 +92,7 @@ export class AuthService {
 
     if (isExistingEmail) throw new BadRequestException("Email existed");
 
-    const customerRole = await this.database.query.roles.findFirst({
-      where: (roles, { eq }) => eq(roles.name, "CUSTOMER"),
-    });
-
-    if (!customerRole) throw new NotFoundException("Customer role not found!");
-
-    const [newAccount] = await this.database
+    await this.database
       .insert(users)
       .values({
         ...registerRequest,
@@ -129,11 +103,6 @@ export class AuthService {
       })
       .returning();
 
-    await this.database.insert(userRoles).values({
-      roleId: customerRole.id,
-      userId: newAccount.id,
-    });
-
     return {
       message: "Register successfully!",
     };
@@ -143,7 +112,6 @@ export class AuthService {
     const existingAccount = await this.database.query.users.findFirst({
       where: (users, { eq }) => eq(users.id, id),
       with: {
-        roles: true,
         tokens: true,
       },
     });
@@ -157,7 +125,6 @@ export class AuthService {
     const existingAccount = await this.database.query.users.findFirst({
       where: (users, { eq }) => eq(users.email, email),
       with: {
-        roles: true,
         tokens: true,
       },
     });
@@ -186,7 +153,6 @@ export class AuthService {
     const existingAccount = await this.database.query.users.findFirst({
       where: (users, { eq }) => eq(users.id, payload.id),
       with: {
-        roles: true,
         tokens: true,
       },
     });
@@ -205,7 +171,7 @@ export class AuthService {
 
     if (!token || token.length === 0) throw new UnauthorizedException();
 
-    const newToken = this.generateToken(existingAccount, payload.roles);
+    const newToken = this.generateToken(existingAccount);
 
     if (payload.exp > DateHelper.currentTime()) {
       return {
@@ -261,12 +227,11 @@ export class AuthService {
     });
   }
 
-  private generateToken(user: UserSchema, roles: string[]): TokenResponse {
+  private generateToken(user: UserSchema): TokenResponse {
     const payload: Payload = {
       id: user.id,
       fullName: `${user.firstName} ${user.lastName}`,
       avatar: user.avatar,
-      roles,
     };
 
     return {
