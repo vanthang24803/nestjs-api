@@ -7,16 +7,18 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiResponse, ApiTags } from "@nestjs/swagger";
-import { BaseAPIDocs, CurrentUser } from "@/common/decorators";
+import { BaseAPIDocs, CurrentUser, Roles } from "@/common/decorators";
 import BaseResponse from "@/shared/helpers/response.helper";
 import { AuthService } from "./auth.service";
-import { RegisterRequest } from "./dto";
+import { RefreshToken, RegisterRequest } from "./dto";
 import { Response } from "express";
 
 import { TokenResponse } from "@/shared/interfaces/auth.interface";
 import { LocalAuthGuard } from "@/common/guards/local-auth.guard";
 import { UserSchema } from "@/domain/schema";
 import { JwtAuthGuard } from "@/common/guards/jwt-auth.guard";
+import { Role } from "@/domain/enums";
+import { RolesGuard } from "@/common/guards/roles.guard";
 
 @Controller({
   path: "auth",
@@ -57,9 +59,20 @@ export class AuthController {
     );
   }
 
+  @Post("refresh")
+  @HttpCode(200)
+  @ApiResponse({
+    status: 200,
+    description: "Refresh successfully. Returns token.",
+  })
+  async refreshToken(@Body() request: RefreshToken) {
+    return new BaseResponse(200, await this.authService.refreshToken(request));
+  }
+
   @Post("logout")
   @HttpCode(200)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.CUSTOMER)
   @ApiResponse({
     status: 200,
     description: "Logout successfully. Returns string message.",

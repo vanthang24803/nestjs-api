@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -21,6 +22,7 @@ import { RegisterRequest, RefreshToken } from "./dto";
 import { Response } from "express";
 import { addDays } from "date-fns";
 import { and, eq, inArray } from "drizzle-orm";
+import { DateHelper } from "@/shared/helpers/date.helper";
 @Injectable()
 export class AuthService {
   private secretKey: string;
@@ -33,15 +35,14 @@ export class AuthService {
     @Inject("DATABASE_CONNECTION") private readonly database: Schema,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly logger: Logger,
   ) {
     this.secretKey = this.configService.get<string>("JWT_SECRET");
     this.refreshKey = this.configService.get<string>("JWT_REFRESH");
     this.nodeEnv = this.configService.get("NODE_ENV");
   }
 
-  async login(user: UserSchema, response: Response): Promise<TokenResponse> {
-    const roleIds = user.roles.map((role) => role.roleId);
-
+  async findRoles(roleIds: string[]) {
     const existingRoles = await this.database
       .select({ name: roles.name })
       .from(roles)
@@ -52,6 +53,14 @@ export class AuthService {
     if (userRoles.length === 0) {
       throw new NotFoundException("No valid roles found!");
     }
+
+    return userRoles;
+  }
+
+  async login(user: UserSchema, response: Response): Promise<TokenResponse> {
+    const roleIds = user.roles.map((role) => role.roleId);
+
+    const userRoles: string[] = await this.findRoles(roleIds);
 
     const token: TokenResponse = this.generateToken(user, userRoles);
 
@@ -75,7 +84,7 @@ export class AuthService {
         this.refreshKey,
       );
 
-      if (payload.exp < Math.floor(Date.now() / 1000)) {
+      if (payload.exp < DateHelper.currentTime()) {
         await this.database.update(tokens).set({
           value: token.refreshToken,
         });
@@ -166,8 +175,50 @@ export class AuthService {
     return existingAccount;
   }
 
-  async refreshToken(refreshTokenRequest: RefreshToken) {
-    return refreshTokenRequest;
+  async refreshToken(
+    refreshTokenRequest: RefreshToken,
+  ): Promise<TokenResponse> {
+    const payload = this.decodeSingleToken(
+      refreshTokenRequest.token,
+      this.refreshKey,
+    );
+
+    const existingAccount = await this.database.query.users.findFirst({
+      where: (users, { eq }) => eq(users.id, payload.id),
+      with: {
+        roles: true,
+        tokens: true,
+      },
+    });
+
+    if (!existingAccount) throw new UnauthorizedException();
+
+    const token = await this.database
+      .select({
+        id: tokens.id,
+        value: tokens.value,
+      })
+      .from(tokens)
+      .where(
+        and(eq(tokens.type, "REFRESH_TOKEN"), eq(tokens.userId, payload.id)),
+      );
+
+    if (!token || token.length === 0) throw new UnauthorizedException();
+
+    const newToken = this.generateToken(existingAccount, payload.roles);
+
+    if (payload.exp > DateHelper.currentTime()) {
+      return {
+        accessToken: newToken.accessToken,
+        refreshToken: token[0].value,
+      };
+    } else {
+      await this.database.update(tokens).set({
+        value: newToken.refreshToken,
+      });
+
+      return newToken;
+    }
   }
 
   async logout(user: UserSchema, response: Response) {

@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Logger, Module } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
 import { DatabaseModule } from "@/database/database.module";
@@ -9,7 +9,7 @@ import { LocalStrategy } from "@/common/strategies/local.strategy";
 
 @Module({
   imports: [DatabaseModule, JwtModule, PassportModule],
-  providers: [AuthService, JwtStrategy, LocalStrategy],
+  providers: [AuthService, JwtStrategy, LocalStrategy, Logger],
   controllers: [AuthController],
   exports: [AuthService],
 })
